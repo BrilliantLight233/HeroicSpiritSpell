@@ -1,0 +1,26 @@
+{
+  "required": true,
+  "package": "com.lin.heroic_spirit_spell.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MagicProjectileSpeedMixin",
+    "EntityTypeBuilderMixin",
+    "WispEntityMixin",
+    "WispRemovalMixin",
+    "WispSpellMixin",
+    "HasteSpellMixin",
+    "CleanseSpellMixin",
+    "FortifyEffectMixin",
+    "DivineSmiteSpellMixin"
+  ],
+  "client": [
+    "EntityLerpMixin",
+    "ProjectileTrailParticleMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}
