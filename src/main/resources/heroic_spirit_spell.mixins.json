@@ -11,11 +11,16 @@
     "HasteSpellMixin",
     "CleanseSpellMixin",
     "FortifyEffectMixin",
-    "DivineSmiteSpellMixin"
+    "DivineSmiteSpellMixin",
+    "ShieldEntityMixin",
+    "ShieldPartMixin",
+    "ProjectileMixin"
   ],
   "client": [
     "EntityLerpMixin",
-    "ProjectileTrailParticleMixin"
+    "ProjectileTrailParticleMixin",
+    "ShieldRendererMixin",
+    "ShieldTrimLayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

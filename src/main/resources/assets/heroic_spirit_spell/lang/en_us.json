@@ -2,5 +2,9 @@
   "spell.heroic_spirit_spell.holy_slash": "Holy Slash",
   "spell.heroic_spirit_spell.holy_slash.desc": "Release a holy blade that applies Guided to targets for 3 seconds.",
   "spell.heroic_spirit_spell.holy_rush": "Holy Rush",
-  "spell.heroic_spirit_spell.holy_rush.desc": "Dash along your look direction and slash; immune to fall damage until you land."
+  "spell.heroic_spirit_spell.holy_rush.desc": "Dash along your look direction and slash; immune to fall damage until you land.",
+  "spell.heroic_spirit_spell.holy_shield": "Holy Shield",
+  "spell.heroic_spirit_spell.holy_shield.desc": "Hold to project a holy barrier in front of you. Releasing dismisses it and lets it recover over time.",
+  "spell.heroic_spirit_spell.holy_shield.requires_shield": "You must be holding a shield to cast this spell.",
+  "spell.heroic_spirit_spell.holy_shield.disabled": "Holy Shield is disabled for %ss."
 }

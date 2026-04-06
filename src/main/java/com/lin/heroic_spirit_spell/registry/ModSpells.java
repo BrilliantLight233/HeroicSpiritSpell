@@ -1,6 +1,7 @@
 package com.lin.heroic_spirit_spell.registry;
 
 import com.lin.heroic_spirit_spell.HeroicSpiritSpell;
+import com.lin.heroic_spirit_spell.spells.holy.HolyShieldSpell;
 import com.lin.heroic_spirit_spell.spells.holy.HolyRushSpell;
 import com.lin.heroic_spirit_spell.spells.holy.HolySlashSpell;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
@@ -30,6 +31,9 @@ public class ModSpells {
 
     public static final DeferredHolder<AbstractSpell, HolyRushSpell> HOLY_RUSH =
             SPELLS.register("holy_rush", HolyRushSpell::new);
+
+    public static final DeferredHolder<AbstractSpell, HolyShieldSpell> HOLY_SHIELD =
+            SPELLS.register("holy_shield", HolyShieldSpell::new);
     
     // TODO: 在这里添加新的法术注册
     // 示例:
