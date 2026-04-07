@@ -37,7 +37,7 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
 
         boolean fullyCharged = heroicSpiritSpell$isFullyCharged(playerMagicData);
         if (fullyCharged) {
-            playerMagicData.setAdditionalCastData(LightningLanceReleaseData.READY);
+            playerMagicData.setAdditionalCastData(LightningLanceReleaseData.READY_TO_RELEASE);
         }
         Utils.serverSideCancelCast(serverPlayer, fullyCharged);
     }
@@ -46,7 +46,7 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
     public void onServerCastComplete(Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled) {
         if (cancelled
                 && entity instanceof ServerPlayer serverPlayer
-                && playerMagicData.getAdditionalCastData() == LightningLanceReleaseData.READY) {
+                && playerMagicData.getAdditionalCastData() == LightningLanceReleaseData.READY_TO_RELEASE) {
             castSpell(level, spellLevel, serverPlayer, playerMagicData.getCastSource(), false);
         }
 
@@ -66,7 +66,7 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
 
     @Unique
     private enum LightningLanceReleaseData implements ICastData {
-        READY;
+        READY_TO_RELEASE;
 
         @Override
         public void reset() {
