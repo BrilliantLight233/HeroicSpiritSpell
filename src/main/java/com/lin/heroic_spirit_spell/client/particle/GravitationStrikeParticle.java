@@ -22,6 +22,7 @@ import org.joml.Vector3f;
 @OnlyIn(Dist.CLIENT)
 public class GravitationStrikeParticle extends TextureSheetParticle {
     private static final float TRAIL_CURVE_START_SCALE = 0.4f;
+    private static final float TRAIL_CURVE_END_SCALE = 0.85f;
 
     private final SpriteSet sprites;
     private final Vec3 forward;
@@ -67,15 +68,7 @@ public class GravitationStrikeParticle extends TextureSheetParticle {
         int particleCount = (int) (15 * this.quadSize);
         for (int i = 1; i < particleCount - 1; i++) {
             float t = i / (float) particleCount;
-            float u = 1 - t;
-            Vec3 localPos =
-                    vec3Copy(localVertices[1]).scale(TRAIL_CURVE_START_SCALE).scale(u * u * u).add(
-                            vec3Copy(localVertices[2]).scale(3 * u * u * t).add(
-                                    vec3Copy(localVertices[3]).scale(3 * u * t * t).add(
-                                            vec3Copy(localVertices[0]).scale(0.85).scale(t * t * t)
-                                    )
-                            )
-                    ).scale(this.quadSize * .85);
+            Vec3 localPos = calculateBezierPoint(t).scale(this.quadSize * TRAIL_CURVE_END_SCALE);
             Vec3 pos = localPos.add(Utils.getRandomVec3(0.2 + i * .01f));
             Vec3 motion = new Vec3(this.xd, this.yd, this.zd).scale(random.nextDouble() * 6);
             if (random.nextFloat() < .6f) {
@@ -84,6 +77,17 @@ public class GravitationStrikeParticle extends TextureSheetParticle {
                         motion.x * 1.25, motion.y * 1.25, motion.z * 1.25);
             }
         }
+    }
+
+    private Vec3 calculateBezierPoint(float t) {
+        float u = 1 - t;
+        return vec3Copy(localVertices[1]).scale(TRAIL_CURVE_START_SCALE).scale(u * u * u).add(
+                vec3Copy(localVertices[2]).scale(3 * u * u * t).add(
+                        vec3Copy(localVertices[3]).scale(3 * u * t * t).add(
+                                vec3Copy(localVertices[0]).scale(TRAIL_CURVE_END_SCALE).scale(t * t * t)
+                        )
+                )
+        );
     }
 
     private Vector3f[] calculateVertices() {

@@ -171,8 +171,8 @@ public class GravitationStrikeSpell extends HoldCastSpell {
                 eyePosition.add(forward.scale(DASH_DISTANCE)),
                 ClipContext.Fluid.NONE).getLocation();
 
-        AABB hitbox = caster.getHitbox().expandTowards(end.subtract(eyePosition)).inflate(2.0);
-        var targetableEntities = level.getEntities(caster, hitbox, target ->
+        AABB targetSearchArea = caster.getHitbox().expandTowards(end.subtract(eyePosition)).inflate(2.0);
+        var targetableEntities = level.getEntities(caster, targetSearchArea, target ->
                 target instanceof LivingEntity livingEntity
                         && isEnemyTarget(caster, livingEntity)
                         && target.getBoundingBox().getCenter()
