@@ -21,6 +21,8 @@ import org.joml.Vector3f;
 
 @OnlyIn(Dist.CLIENT)
 public class GravitationStrikeParticle extends TextureSheetParticle {
+    private static final float TRAIL_CURVE_START_SCALE = 0.4f;
+
     private final SpriteSet sprites;
     private final Vec3 forward;
     private final Vec3 up;
@@ -67,7 +69,7 @@ public class GravitationStrikeParticle extends TextureSheetParticle {
             float t = i / (float) particleCount;
             float u = 1 - t;
             Vec3 localPos =
-                    vec3Copy(localVertices[1]).scale(0.4).scale(u * u * u).add(
+                    vec3Copy(localVertices[1]).scale(TRAIL_CURVE_START_SCALE).scale(u * u * u).add(
                             vec3Copy(localVertices[2]).scale(3 * u * u * t).add(
                                     vec3Copy(localVertices[3]).scale(3 * u * t * t).add(
                                             vec3Copy(localVertices[0]).scale(0.85).scale(t * t * t)

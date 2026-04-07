@@ -56,6 +56,10 @@ public class GravitationStrikeSpell extends HoldCastSpell {
     private static final float LIVING_PULL_STRENGTH = 0.18f;
     private static final float PROJECTILE_PULL_STRENGTH = 0.24f;
     private static final float DASH_VERTICAL_LIFT = 0.1f;
+    private static final float DAMAGE_BOX_HEIGHT_OFFSET = 1.0f;
+    private static final double TARGET_INTERPOLATION_FACTOR = 0.5;
+    private static final float KNOCKBACK_MULTIPLIER = 1.2f;
+    private static final double MIN_PULL_DISTANCE = 0.25;
     private static final Vector3f TRACE_COLOR = new Vector3f(0.72f, 0.28f, 1.0f);
     private static final Map<UUID, ChargeState> CHARGE_STATES = new HashMap<>();
 
@@ -183,9 +187,9 @@ public class GravitationStrikeSpell extends HoldCastSpell {
             AABB damageBox = AABB.ofSize(
                     closestEntity.getBoundingBox().getCenter(),
                     DASH_DAMAGE_RADIUS,
-                    DASH_DAMAGE_RADIUS + 1.0f,
+                    DASH_DAMAGE_RADIUS + DAMAGE_BOX_HEIGHT_OFFSET,
                     DASH_DAMAGE_RADIUS).move(forward.scale(DASH_DAMAGE_RADIUS / 2.0f));
-            end = damageBox.getCenter().add(end).scale(0.5);
+            end = damageBox.getCenter().add(end).scale(TARGET_INTERPOLATION_FACTOR);
             var damageSource = getDamageSource(caster);
             for (LivingEntity target : level.getEntitiesOfClass(LivingEntity.class, damageBox, livingEntity ->
                     isEnemyTarget(caster, livingEntity)
@@ -205,7 +209,7 @@ public class GravitationStrikeSpell extends HoldCastSpell {
                     if (level instanceof ServerLevel serverLevel) {
                         EnchantmentHelper.doPostAttackEffects(serverLevel, target, damageSource);
                     }
-                    Vec3 knockback = forward.scale(1.2f
+                    Vec3 knockback = forward.scale(KNOCKBACK_MULTIPLIER
                                     * Utils.clampedKnockbackResistanceFactor(target, 0.2f, 1f))
                             .add(0, 0.2, 0);
                     target.setDeltaMovement(knockback);
@@ -237,7 +241,7 @@ public class GravitationStrikeSpell extends HoldCastSpell {
         for (Entity target : level.getEntities(caster, area, entity -> isPullTarget(caster, entity))) {
             Vec3 targetCenter = target.getBoundingBox().getCenter();
             Vec3 offset = casterCenter.subtract(targetCenter);
-            double distance = Math.max(0.25, offset.length());
+            double distance = Math.max(MIN_PULL_DISTANCE, offset.length());
             Vec3 pull = offset.normalize().scale((1.0 - Math.min(distance, PULL_RADIUS) / PULL_RADIUS)
                     * (target instanceof Projectile ? PROJECTILE_PULL_STRENGTH : LIVING_PULL_STRENGTH));
             target.setDeltaMovement(target.getDeltaMovement().scale(0.85).add(pull));
