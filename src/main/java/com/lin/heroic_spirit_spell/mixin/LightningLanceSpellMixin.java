@@ -13,6 +13,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Constant;
@@ -44,9 +45,13 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
     private void heroicSpiritSpell$setContinuousCastType(CallbackInfoReturnable<CastType> cir) {
         cir.setReturnValue(CastType.CONTINUOUS);
     }
-    @Override
-    public void onCast(Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData) {
-
+    /**
+     * @author
+     * @reason
+     */
+    @Inject(method = "onCast", at = @At("HEAD"), remap = false, cancellable = true)
+    public void onCast(Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData, CallbackInfo ci) {
+        ci.cancel();
     }
 //    @Override
 //    public void onServerCastTick(Level level, int spellLevel, LivingEntity entity, @Nullable MagicData playerMagicData) {
