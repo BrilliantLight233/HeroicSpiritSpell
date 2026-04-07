@@ -5,6 +5,7 @@ import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.ICastData;
 import io.redspace.ironsspellbooks.api.util.Utils;
+import io.redspace.ironsspellbooks.entity.spells.lightning_lance.LightningLanceProjectile;
 import io.redspace.ironsspellbooks.spells.lightning.LightningLanceSpell;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -14,8 +15,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import javax.annotation.Nullable;
@@ -28,8 +29,6 @@ public abstract class LightningLanceSpellMixin {
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS = 20;
     @Unique
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_HOLD_TICKS = 20 * 60 * 60;
-    @Unique
-    private static final ThreadLocal<LightningLanceChargeData> HEROIC_SPIRIT_SPELL$CHARGE_DATA = new ThreadLocal<>();
 
     @ModifyConstant(method = "<init>", constant = @Constant(intValue = 40), remap = false)
     private int heroicSpiritSpell$extendLightningLanceHoldTime(int original) {
@@ -54,16 +53,6 @@ public abstract class LightningLanceSpellMixin {
         Utils.serverSideCancelCast(serverPlayer, true);
     }
 
-    @Inject(method = "onCast", at = @At("HEAD"), remap = false)
-    private void heroicSpiritSpell$captureChargeData(
-            Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData, CallbackInfo ci) {
-        if (playerMagicData.getAdditionalCastData() instanceof LightningLanceChargeData chargeData) {
-            HEROIC_SPIRIT_SPELL$CHARGE_DATA.set(chargeData);
-        } else {
-            HEROIC_SPIRIT_SPELL$CHARGE_DATA.remove();
-        }
-    }
-
     @Inject(method = "onServerCastComplete", at = @At("HEAD"), remap = false)
     private void heroicSpiritSpell$fireLightningLanceOnRelease(
             Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled, CallbackInfo ci) {
@@ -74,21 +63,25 @@ public abstract class LightningLanceSpellMixin {
         }
     }
 
-    @ModifyArg(
+    @Redirect(
             method = "onCast",
             at = @At(
                     value = "INVOKE",
                     target = "Lio/redspace/ironsspellbooks/entity/spells/lightning_lance/LightningLanceProjectile;setDamage(F)V"),
-            index = 0,
             remap = false)
-    private float heroicSpiritSpell$scaleLightningLanceDamage(float damage) {
-        LightningLanceChargeData chargeData = HEROIC_SPIRIT_SPELL$CHARGE_DATA.get();
-        return chargeData != null ? damage * chargeData.damageMultiplier : damage;
-    }
-
-    @Inject(method = "onCast", at = @At("RETURN"), remap = false)
-    private void heroicSpiritSpell$clearChargeData(CallbackInfo ci) {
-        HEROIC_SPIRIT_SPELL$CHARGE_DATA.remove();
+    private void heroicSpiritSpell$scaleLightningLanceDamage(
+            LightningLanceProjectile projectile,
+            float damage,
+            Level level,
+            int spellLevel,
+            LivingEntity entity,
+            CastSource castSource,
+            MagicData playerMagicData) {
+        if (playerMagicData.getAdditionalCastData() instanceof LightningLanceChargeData chargeData) {
+            projectile.setDamage(damage * chargeData.damageMultiplier);
+        } else {
+            projectile.setDamage(damage);
+        }
     }
 
     @Unique
