@@ -2,5 +2,12 @@
   "spell.heroic_spirit_spell.holy_slash": "神圣斩击",
   "spell.heroic_spirit_spell.holy_slash.desc": "释放一道神圣光刃，对命中目标施加5秒神圣指引。",
   "spell.heroic_spirit_spell.holy_rush": "神圣冲锋",
-  "spell.heroic_spirit_spell.holy_rush.desc": "向前冲刺，下劈斩出一道弧形神圣斩击，冲刺在击中敌方目标时立即停下，并小幅击退目标；被斩击击中的投射物会被偏移"
+  "spell.heroic_spirit_spell.holy_rush.desc": "向前冲刺，下劈斩出一道弧形神圣斩击，冲刺在击中敌方目标时立即停下，并小幅击退目标；被斩击击中的投射物会被偏移",
+  "spell.heroic_spirit_spell.holy_shield": "神圣护盾",
+  "spell.heroic_spirit_spell.holy_shield.desc": "按住施法，在身前维持一面神圣护盾；松开后护盾关闭，并开始恢复生命值。",
+  "spell.heroic_spirit_spell.holy_shield.requires_shield": "必须持有盾牌才能释放。",
+  "spell.heroic_spirit_spell.holy_shield.disabled": "神圣护盾已破碎，%s秒后才能再次使用。",
+  "spell.heroic_spirit_spell.gravitation_strike": "引力冲击",
+  "spell.heroic_spirit_spell.gravitation_strike.desc": "按住蓄力形成引力场，期间获得高额减伤与减速，并持续牵引附近敌人与其投射物。松开或蓄力完成后向前冲锋，造成基础伤害，并额外造成等同于蓄力期间承受伤害的魔法伤害。",
+  "spell.heroic_spirit_spell.gravitation_strike.charge_time": "最大蓄力：%s秒"
 }

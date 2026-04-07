@@ -1,5 +1,6 @@
 package com.lin.heroic_spirit_spell;
 
+import com.lin.heroic_spirit_spell.client.particle.GravitationStrikeParticle;
 import com.lin.heroic_spirit_spell.client.particle.HolyRushSlashParticle;
 import com.lin.heroic_spirit_spell.entity.spells.HolySlashRenderer;
 import com.lin.heroic_spirit_spell.registry.ModEntities;
@@ -26,5 +27,6 @@ public class HeroicSpiritSpellClient {
     @SubscribeEvent
     public static void registerParticleProviders(RegisterParticleProvidersEvent event) {
         event.registerSpriteSet(ModParticles.HOLY_RUSH_SLASH.get(), HolyRushSlashParticle.Provider::new);
+        event.registerSpriteSet(ModParticles.GRAVITATION_STRIKE_SLASH.get(), GravitationStrikeParticle.Provider::new);
     }
 }
