@@ -1,6 +1,7 @@
 package com.lin.heroic_spirit_spell.registry;
 
 import com.lin.heroic_spirit_spell.HeroicSpiritSpell;
+import com.lin.heroic_spirit_spell.particle.GravitationStrikeParticleOptions;
 import com.lin.heroic_spirit_spell.particle.HolyRushSlashParticleOptions;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.particles.ParticleType;
@@ -31,6 +32,21 @@ public final class ModParticles {
                 public StreamCodec<RegistryFriendlyByteBuf, HolyRushSlashParticleOptions> streamCodec() {
                     return (StreamCodec<RegistryFriendlyByteBuf, HolyRushSlashParticleOptions>)
                             (StreamCodec<?, HolyRushSlashParticleOptions>) HolyRushSlashParticleOptions.STREAM_CODEC;
+                }
+            });
+
+    @SuppressWarnings("unchecked")
+    public static final DeferredHolder<ParticleType<?>, ParticleType<GravitationStrikeParticleOptions>> GRAVITATION_STRIKE_SLASH =
+            PARTICLE_TYPES.register("gravitation_strike_slash", () -> new ParticleType<GravitationStrikeParticleOptions>(true) {
+                @Override
+                public MapCodec<GravitationStrikeParticleOptions> codec() {
+                    return GravitationStrikeParticleOptions.MAP_CODEC;
+                }
+
+                @Override
+                public StreamCodec<RegistryFriendlyByteBuf, GravitationStrikeParticleOptions> streamCodec() {
+                    return (StreamCodec<RegistryFriendlyByteBuf, GravitationStrikeParticleOptions>)
+                            (StreamCodec<?, GravitationStrikeParticleOptions>) GravitationStrikeParticleOptions.STREAM_CODEC;
                 }
             });
 

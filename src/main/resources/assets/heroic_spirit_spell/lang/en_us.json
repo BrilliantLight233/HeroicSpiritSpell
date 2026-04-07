@@ -6,5 +6,8 @@
   "spell.heroic_spirit_spell.holy_shield": "Holy Shield",
   "spell.heroic_spirit_spell.holy_shield.desc": "Hold to project a holy barrier in front of you. Releasing dismisses it and lets it recover over time.",
   "spell.heroic_spirit_spell.holy_shield.requires_shield": "You must be holding a shield to cast this spell.",
-  "spell.heroic_spirit_spell.holy_shield.disabled": "Holy Shield is disabled for %ss."
+  "spell.heroic_spirit_spell.holy_shield.disabled": "Holy Shield is disabled for %ss.",
+  "spell.heroic_spirit_spell.gravitation_strike": "Gravitation Strike",
+  "spell.heroic_spirit_spell.gravitation_strike.desc": "Hold to charge a gravity field that slows you, hardens you, and drags enemies inward. Releasing or reaching full charge launches you forward, dealing bonus magic damage equal to the damage you suffered while charging.",
+  "spell.heroic_spirit_spell.gravitation_strike.charge_time": "Max Charge: %ss"
 }

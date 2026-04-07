@@ -1,6 +1,7 @@
 package com.lin.heroic_spirit_spell.registry;
 
 import com.lin.heroic_spirit_spell.HeroicSpiritSpell;
+import com.lin.heroic_spirit_spell.spells.ender.GravitationStrikeSpell;
 import com.lin.heroic_spirit_spell.spells.holy.HolyShieldSpell;
 import com.lin.heroic_spirit_spell.spells.holy.HolyRushSpell;
 import com.lin.heroic_spirit_spell.spells.holy.HolySlashSpell;
@@ -34,6 +35,9 @@ public class ModSpells {
 
     public static final DeferredHolder<AbstractSpell, HolyShieldSpell> HOLY_SHIELD =
             SPELLS.register("holy_shield", HolyShieldSpell::new);
+
+    public static final DeferredHolder<AbstractSpell, GravitationStrikeSpell> GRAVITATION_STRIKE =
+            SPELLS.register("gravitation_strike", GravitationStrikeSpell::new);
     
     // TODO: 在这里添加新的法术注册
     // 示例:
