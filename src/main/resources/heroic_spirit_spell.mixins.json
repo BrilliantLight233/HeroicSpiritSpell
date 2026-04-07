@@ -9,6 +9,7 @@
     "WispRemovalMixin",
     "WispSpellMixin",
     "HasteSpellMixin",
+    "LightningLanceSpellMixin",
     "CleanseSpellMixin",
     "FortifyEffectMixin",
     "DivineSmiteSpellMixin",
