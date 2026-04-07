@@ -29,6 +29,10 @@ public abstract class LightningLanceSpellMixin {
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS = 20;
     @Unique
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_HOLD_TICKS = 20 * 60 * 60;
+    @Unique
+    private static final float HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_DAMAGE_MULTIPLIER = 0.5f;
+    @Unique
+    private static final float HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_DAMAGE_MULTIPLIER_RANGE = 0.5f;
 
     @ModifyConstant(method = "<init>", constant = @Constant(intValue = 40), remap = false)
     private int heroicSpiritSpell$extendLightningLanceHoldTime(int original) {
@@ -98,7 +102,8 @@ public abstract class LightningLanceSpellMixin {
                 Math.max(HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS, chargedTicks));
         float normalized = (clampedTicks - HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS)
                 / (float) (HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS - HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS);
-        return 0.5f + normalized * 0.5f;
+        return HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_DAMAGE_MULTIPLIER
+                + normalized * HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_DAMAGE_MULTIPLIER_RANGE;
     }
 
     @Unique
