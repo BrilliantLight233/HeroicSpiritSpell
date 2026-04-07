@@ -1,3 +1,5 @@
 /.gradle/
 /.gradle_repo/
 /build/
+/gradlew
+/gradle/wrapper/gradle-wrapper.jar
