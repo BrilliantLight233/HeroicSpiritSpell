@@ -52,6 +52,10 @@ public final class HolyShieldHelper {
         return !stack.isEmpty() && stack.canPerformAction(ItemAbilities.SHIELD_BLOCK);
     }
 
+    public static boolean isActivelyUsingShield(LivingEntity livingEntity) {
+        return livingEntity.isUsingItem() && isShieldItem(livingEntity.getUseItem());
+    }
+
     public static int getMaxHpCenti(int spellLevel) {
         return spellLevel * 1000;
     }
@@ -164,6 +168,24 @@ public final class HolyShieldHelper {
         shieldEntity.setGlowingTag(true);
     }
 
+    public static void refreshExistingShield(ShieldEntity shieldEntity, ServerPlayer owner, int spellLevel) {
+        int maxHpCenti = getStoredMaxHpCenti(owner);
+        int storedHpCenti = Mth.clamp(getStoredHpCenti(owner), 0, maxHpCenti);
+        CompoundTag data = shieldEntity.getPersistentData();
+        int previousLevel = data.getInt(LAST_LEVEL);
+        data.putBoolean(ACTIVE, true);
+        data.putUUID(OWNER_UUID, owner.getUUID());
+        data.putFloat(MAX_HP, fromCenti(maxHpCenti));
+        data.putInt(LAST_LEVEL, spellLevel);
+        if (previousLevel != spellLevel) {
+            shieldEntity.setHealth(fromCenti(storedHpCenti));
+        } else if (shieldEntity.getHealth() > fromCenti(maxHpCenti)) {
+            shieldEntity.setHealth(fromCenti(maxHpCenti));
+        }
+        data.putFloat(PREV_HP, shieldEntity.getHealth());
+        shieldEntity.setGlowingTag(true);
+    }
+
     public static boolean isHolyShield(Entity entity) {
         if (entity instanceof ShieldPart shieldPart) {
             return isHolyShield(shieldPart.parentEntity);
@@ -226,6 +248,8 @@ public final class HolyShieldHelper {
             initializeHolyShield(shieldEntity, player, spellLevel);
             updateShieldAnchor(shieldEntity, player);
             player.level().addFreshEntity(shieldEntity);
+        } else {
+            refreshExistingShield(shieldEntity, player, spellLevel);
         }
         return shieldEntity;
     }
@@ -233,6 +257,7 @@ public final class HolyShieldHelper {
     public static void syncShieldHealth(ServerPlayer player, ShieldEntity shieldEntity) {
         int currentHp = Math.min(getStoredMaxHpCenti(player), toCenti(Math.max(0.0f, shieldEntity.getHealth())));
         setStoredHpCenti(player, currentHp);
+        shieldEntity.getPersistentData().putFloat(MAX_HP, fromCenti(getStoredMaxHpCenti(player)));
         setEntityPreviousHp(shieldEntity, shieldEntity.getHealth());
     }
 

@@ -71,7 +71,7 @@ public class GravitationStrikeSpell extends HoldCastSpell {
             .build();
 
     public GravitationStrikeSpell() {
-        super(MAX_HOLD_DURATION_TICKS);
+        super(MAX_CHARGE_TICKS);
         this.baseSpellPower = 5;
         this.spellPowerPerLevel = 5;
         this.baseManaCost = 0;
@@ -144,7 +144,7 @@ public class GravitationStrikeSpell extends HoldCastSpell {
 
     @Override
     protected boolean shouldRelease(ServerPlayer serverPlayer, MagicData playerMagicData) {
-        return !serverPlayer.isUsingItem() || getChargedTicks(playerMagicData) >= MAX_CHARGE_TICKS;
+        return getChargedTicks(playerMagicData) >= MAX_CHARGE_TICKS;
     }
 
     @Override

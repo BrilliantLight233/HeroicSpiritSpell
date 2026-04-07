@@ -27,7 +27,7 @@ public abstract class HoldCastSpell extends AbstractSpell {
     }
 
     protected boolean shouldRelease(ServerPlayer serverPlayer, MagicData playerMagicData) {
-        return !serverPlayer.isUsingItem();
+        return false;
     }
 
     protected void cancelHold(ServerPlayer serverPlayer, boolean triggerCooldown) {

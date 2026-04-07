@@ -4,7 +4,7 @@
   "spell.heroic_spirit_spell.holy_rush": "神圣冲锋",
   "spell.heroic_spirit_spell.holy_rush.desc": "向前冲刺，下劈斩出一道弧形神圣斩击，冲刺在击中敌方目标时立即停下，并小幅击退目标；被斩击击中的投射物会被偏移",
   "spell.heroic_spirit_spell.holy_shield": "神圣护盾",
-  "spell.heroic_spirit_spell.holy_shield.desc": "按住施法，在身前维持一面神圣护盾；松开后护盾关闭，并开始恢复生命值。",
+  "spell.heroic_spirit_spell.holy_shield.desc": "按住施法，在面前召唤魔法盾牌抵挡攻击；松开后关闭盾牌并逐渐恢复生命值。若魔法盾牌破碎，则禁用5秒。",
   "spell.heroic_spirit_spell.holy_shield.requires_shield": "必须持有盾牌才能释放。",
   "spell.heroic_spirit_spell.holy_shield.disabled": "神圣护盾已破碎，%s秒后才能再次使用。",
   "spell.heroic_spirit_spell.gravitation_strike": "引力冲击",
