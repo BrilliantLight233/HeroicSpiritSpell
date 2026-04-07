@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.ModifyConstant;
 
 import javax.annotation.Nullable;
 
-@Mixin(LightningLanceSpell.class)
+@Mixin(value = LightningLanceSpell.class, remap = false)
 public abstract class LightningLanceSpellMixin extends AbstractSpell {
     @Unique
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_CHARGE_TICKS = 40;
