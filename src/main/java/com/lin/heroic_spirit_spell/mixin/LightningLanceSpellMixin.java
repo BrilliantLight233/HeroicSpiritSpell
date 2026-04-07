@@ -1,6 +1,8 @@
 package com.lin.heroic_spirit_spell.mixin;
 
 import io.redspace.ironsspellbooks.api.magic.MagicData;
+import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
+import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.ICastData;
 import io.redspace.ironsspellbooks.api.util.Utils;
 import io.redspace.ironsspellbooks.spells.lightning.LightningLanceSpell;
@@ -54,11 +56,21 @@ public abstract class LightningLanceSpellMixin {
 
     @Inject(method = "onCast", at = @At("HEAD"), remap = false)
     private void heroicSpiritSpell$captureChargeData(
-            Level level, int spellLevel, LivingEntity entity, Object castSource, MagicData playerMagicData, CallbackInfo ci) {
+            Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData, CallbackInfo ci) {
         if (playerMagicData.getAdditionalCastData() instanceof LightningLanceChargeData chargeData) {
             HEROIC_SPIRIT_SPELL$CHARGE_DATA.set(chargeData);
         } else {
             HEROIC_SPIRIT_SPELL$CHARGE_DATA.remove();
+        }
+    }
+
+    @Inject(method = "onServerCastComplete", at = @At("HEAD"), remap = false)
+    private void heroicSpiritSpell$fireLightningLanceOnRelease(
+            Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled, CallbackInfo ci) {
+        if (cancelled
+                && entity instanceof ServerPlayer serverPlayer
+                && playerMagicData.getAdditionalCastData() instanceof LightningLanceChargeData) {
+            ((AbstractSpell) (Object) this).castSpell(level, spellLevel, serverPlayer, playerMagicData.getCastSource(), false);
         }
     }
 
