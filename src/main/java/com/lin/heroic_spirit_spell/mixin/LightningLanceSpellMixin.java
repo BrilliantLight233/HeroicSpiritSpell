@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import javax.annotation.Nullable;
 
 @Mixin(LightningLanceSpell.class)
-public abstract class LightningLanceSpellMixin {
+public abstract class LightningLanceSpellMixin extends AbstractSpell {
     @Unique
     private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_CHARGE_TICKS = 40;
     @Unique
@@ -29,6 +29,7 @@ public abstract class LightningLanceSpellMixin {
         return HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_HOLD_TICKS;
     }
 
+    @Override
     public void onServerCastTick(Level level, int spellLevel, LivingEntity entity, @Nullable MagicData playerMagicData) {
         if (!(entity instanceof ServerPlayer serverPlayer) || playerMagicData == null || serverPlayer.isUsingItem()) {
             return;
@@ -41,18 +42,19 @@ public abstract class LightningLanceSpellMixin {
         Utils.serverSideCancelCast(serverPlayer, fullyCharged);
     }
 
+    @Override
     public void onServerCastComplete(Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled) {
         if (cancelled
                 && entity instanceof ServerPlayer serverPlayer
                 && playerMagicData.getAdditionalCastData() == LightningLanceReleaseData.READY) {
-            ((AbstractSpell) (Object) this).castSpell(level, spellLevel, serverPlayer, playerMagicData.getCastSource(), false);
+            castSpell(level, spellLevel, serverPlayer, playerMagicData.getCastSource(), false);
         }
 
         playerMagicData.resetCastingState();
         if (entity instanceof ServerPlayer serverPlayer) {
             PacketDistributor.sendToPlayersTrackingEntityAndSelf(
                     serverPlayer,
-                    new OnCastFinishedPacket(serverPlayer.getUUID(), ((AbstractSpell) (Object) this).getSpellId(), cancelled));
+                    new OnCastFinishedPacket(serverPlayer.getUUID(), getSpellId(), cancelled));
         }
     }
 
