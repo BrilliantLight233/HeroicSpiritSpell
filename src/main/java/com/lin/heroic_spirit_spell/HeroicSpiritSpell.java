@@ -9,6 +9,8 @@ import net.neoforged.fml.ModContainer;
 import com.lin.heroic_spirit_spell.registry.ModSpells;
 import com.lin.heroic_spirit_spell.registry.ModEntities;
 import com.lin.heroic_spirit_spell.registry.ModParticles;
+import com.lin.heroic_spirit_spell.registry.ModEffects;
+import com.lin.heroic_spirit_spell.util.ChargedEffectTuning;
 
 @Mod(HeroicSpiritSpell.MODID)
 public class HeroicSpiritSpell {
@@ -27,11 +29,14 @@ public class HeroicSpiritSpell {
 
         ModParticles.register(modEventBus);
 
+        ModEffects.register(modEventBus);
+
         // 注册到 NeoForge 事件总线
         // NeoForge.EVENT_BUS.register(this);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(ChargedEffectTuning::apply);
         LOGGER.info("Heroic Spirit Spell Mod Initialized");
     }
 }
