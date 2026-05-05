@@ -1,6 +1,7 @@
 package com.lin.heroic_spirit_spell.mixin;
 
 import com.lin.heroic_spirit_spell.util.HolyShieldHelper;
+import io.redspace.ironsspellbooks.entity.spells.AbstractShieldEntity;
 import io.redspace.ironsspellbooks.entity.spells.ShieldPart;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -15,8 +16,8 @@ public abstract class ProjectileMixin {
     private void heroicSpiritSpell$allowAlliedProjectilesThroughHolyShield(Entity target, CallbackInfoReturnable<Boolean> cir) {
         Projectile projectile = (Projectile) (Object) this;
         if (target instanceof ShieldPart shieldPart
-                && HolyShieldHelper.isHolyShield(shieldPart.parentEntity)
-                && HolyShieldHelper.shouldIgnoreDamage(shieldPart.parentEntity, projectile)) {
+                && shieldPart.parentEntity instanceof AbstractShieldEntity abstractShield
+                && HolyShieldHelper.shouldIgnoreDamage(abstractShield, projectile)) {
             cir.setReturnValue(false);
         }
     }

@@ -37,7 +37,7 @@ public class MagicProjectileSpeedMixin {
 
     private double heroicSpiritSpell$getCustomSpeed(AbstractMagicProjectile projectile) {
         if (projectile instanceof LightningLanceProjectile)
-            return 8.0d;
+            return 6.4d;
         if (projectile instanceof MagicArrowProjectile)
             return 6.4d;
         if (projectile instanceof MagicMissileProjectile)

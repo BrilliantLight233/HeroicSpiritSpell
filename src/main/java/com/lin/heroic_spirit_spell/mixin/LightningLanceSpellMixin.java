@@ -1,11 +1,13 @@
 package com.lin.heroic_spirit_spell.mixin;
 
+import com.lin.heroic_spirit_spell.LightningLanceCastHelper;
 import com.lin.heroic_spirit_spell.LightningLanceChargeData;
+import com.lin.heroic_spirit_spell.util.LightningLanceDeferredRelease;
+import com.lin.heroic_spirit_spell.util.LightningLanceSpawnGuard;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.CastType;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
-import io.redspace.ironsspellbooks.api.util.Utils;
 import io.redspace.ironsspellbooks.entity.spells.lightning_lance.LightningLanceProjectile;
 import io.redspace.ironsspellbooks.spells.lightning.LightningLanceSpell;
 import net.minecraft.server.level.ServerPlayer;
@@ -13,7 +15,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Constant;
@@ -23,22 +24,20 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import javax.annotation.Nullable;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Mixin(value = LightningLanceSpell.class, remap = false)
 public abstract class LightningLanceSpellMixin extends AbstractSpell {
     @Unique
-    private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS = 10;
-    @Unique
-    private static final int HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS = 20;
-    @Unique
     private static final float HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_DAMAGE_MULTIPLIER = 0.5f;
     @Unique
     private static final float HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_DAMAGE_MULTIPLIER_RANGE = 0.5f;
-
+    @Unique
+    private static final ConcurrentHashMap<UUID, Long> HEROIC_SPIRIT_SPELL$LAST_COMPLETE_TICK = new ConcurrentHashMap<>();
     @ModifyConstant(method = "<init>", constant = @Constant(intValue = 40), remap = false)
     private int heroicSpiritSpell$setLightningLanceMaxChargeTicks(int original) {
-        return HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS;
+        return LightningLanceCastHelper.HOLD_CAST_TICKS;
     }
 
     @Inject(method = "getCastType", at = @At("HEAD"), cancellable = true, remap = false)
@@ -70,8 +69,24 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
 
     @Override
     public void onServerCastComplete(Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled) {
-
-        if (!cancelled || !(entity instanceof ServerPlayer serverPlayer) || playerMagicData == null) {
+        if (!(entity instanceof ServerPlayer serverPlayer) || playerMagicData == null) {
+            return;
+        }
+        if (!cancelled) {
+            return;
+        }
+        if (!playerMagicData.isCasting() || !LightningLanceCastHelper.SPELL_ID.equals(playerMagicData.getCastingSpellId())) {
+            return;
+        }
+        long currentTick = level.getGameTime();
+        Long previousTick = HEROIC_SPIRIT_SPELL$LAST_COMPLETE_TICK.put(serverPlayer.getUUID(), currentTick);
+        if (previousTick != null && previousTick == currentTick) {
+            return;
+        }
+        int chargedTicks = heroicSpiritSpell$getChargedTicks(playerMagicData);
+        if (chargedTicks < LightningLanceCastHelper.MIN_CHARGE_TICKS) {
+            LightningLanceDeferredRelease.clear(serverPlayer.getUUID());
+            heroicSpiritSpell$finishCancelledLance(serverPlayer, playerMagicData, cancelled);
             return;
         }
 
@@ -79,14 +94,24 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
         if (playerMagicData.getAdditionalCastData() instanceof LightningLanceChargeData(float multiplier)) {
             damageMultiplier = multiplier;
         } else {
-            damageMultiplier = heroicSpiritSpell$getDamageMultiplier(heroicSpiritSpell$getChargedTicks(playerMagicData));
+            damageMultiplier = heroicSpiritSpell$getDamageMultiplier(chargedTicks);
         }
 
         heroicSpiritSpell$spawnChargedLance(level, spellLevel, serverPlayer, damageMultiplier);
+        LightningLanceSpawnGuard.markSpawn(serverPlayer);
+        LightningLanceDeferredRelease.clear(serverPlayer.getUUID());
 
+        heroicSpiritSpell$finishCancelledLance(serverPlayer, playerMagicData, cancelled);
+
+    }
+
+    @Unique
+    private void heroicSpiritSpell$finishCancelledLance(ServerPlayer serverPlayer, MagicData playerMagicData, boolean cancelled) {
+        LightningLanceCastHelper.clearZeroElapsedCancelCoalesce(serverPlayer.getUUID());
         playerMagicData.resetCastingState();
-            PacketDistributor.sendToPlayersTrackingEntityAndSelf(serverPlayer, new io.redspace.ironsspellbooks.network.casting.OnCastFinishedPacket(serverPlayer.getUUID(), getSpellId(), cancelled));
-
+        PacketDistributor.sendToPlayersTrackingEntityAndSelf(
+                serverPlayer,
+                new io.redspace.ironsspellbooks.network.casting.OnCastFinishedPacket(serverPlayer.getUUID(), getSpellId(), cancelled));
     }
 
     @Redirect(
@@ -122,21 +147,18 @@ public abstract class LightningLanceSpellMixin extends AbstractSpell {
 
     @Unique
     private static int heroicSpiritSpell$getChargedTicks(MagicData playerMagicData) {
-        return Math.min(
-                HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS,
-                Math.max(0, playerMagicData.getCastDuration() - playerMagicData.getCastDurationRemaining()));
+        return LightningLanceCastHelper.getChargedTicks(playerMagicData);
     }
 
     @Unique
     private static float heroicSpiritSpell$getDamageMultiplier(int chargedTicks) {
         int clampedTicks = Math.min(
-                HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS,
-                Math.max(HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS, chargedTicks));
-        float normalized = (clampedTicks - HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS)
-                / (float) (HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MAX_CHARGE_TICKS - HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_CHARGE_TICKS);
+                LightningLanceCastHelper.MAX_CHARGE_TICKS,
+                Math.max(LightningLanceCastHelper.MIN_CHARGE_TICKS, chargedTicks));
+        float normalized = (clampedTicks - LightningLanceCastHelper.MIN_CHARGE_TICKS)
+                / (float) (LightningLanceCastHelper.MAX_CHARGE_TICKS - LightningLanceCastHelper.MIN_CHARGE_TICKS);
         return HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_MIN_DAMAGE_MULTIPLIER
                 + normalized * HEROIC_SPIRIT_SPELL$LIGHTNING_LANCE_DAMAGE_MULTIPLIER_RANGE;
     }
-
 
 }

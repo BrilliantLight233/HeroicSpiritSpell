@@ -1,27 +1,36 @@
 package com.lin.heroic_spirit_spell.util;
 
 import com.lin.heroic_spirit_spell.HeroicSpiritSpell;
+import com.lin.heroic_spirit_spell.mixin.accessor.ProjectileOwnerAccessor;
+import com.lin.heroic_spirit_spell.network.HolyShieldHudPayload;
 import io.redspace.ironsspellbooks.entity.spells.AbstractShieldEntity;
 import io.redspace.ironsspellbooks.entity.spells.ShieldPart;
 import io.redspace.ironsspellbooks.entity.spells.shield.ShieldEntity;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemCooldowns;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.ReadOnlyScoreInfo;
 import net.neoforged.neoforge.common.ItemAbilities;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
+import java.util.Locale;
 import java.util.UUID;
 
 public final class HolyShieldHelper {
@@ -40,6 +49,9 @@ public final class HolyShieldHelper {
     private static final String BREAK_TICKS = "break_ticks";
     private static final String BLOCKED_CENTI = "blocked_centi";
     private static final String LAST_LEVEL = "last_level";
+
+    /** 魔法盾破碎后：法术禁用与原版物品冷却共用时长（5s） */
+    public static final int HOLY_SHIELD_BREAK_DISABLED_TICKS = 100;
 
     private HolyShieldHelper() {
     }
@@ -81,9 +93,38 @@ public final class HolyShieldHelper {
     }
 
     public static void setStoredHpCenti(Player player, int hpCenti) {
+        int value = Math.max(0, hpCenti);
         CompoundTag tag = getPlayerData(player);
-        tag.putInt(HP_CENTI, Math.max(0, hpCenti));
+        tag.putInt(HP_CENTI, value);
         savePlayerData(player, tag);
+        if (player instanceof ServerPlayer serverPlayer && serverPlayer.getServer() != null) {
+            ensureObjective(serverPlayer.getServer(), OBJECTIVE_HP);
+            setHpObjectiveScore(serverPlayer, value);
+        }
+    }
+
+    /**
+     * Pull hp from scoreboard objective hss_hp if the player has an entry.
+     * This allows /scoreboard edits to drive shield hp.
+     */
+    public static void applyScoreboardHpOverride(ServerPlayer player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        Objective objective = server.getScoreboard().getObjective(OBJECTIVE_HP);
+        if (objective == null) {
+            return;
+        }
+        ReadOnlyScoreInfo info = server.getScoreboard().getPlayerScoreInfo(player, objective);
+        if (info == null) {
+            return;
+        }
+        int maxHp = Math.max(0, getStoredMaxHpCenti(player));
+        int clamped = Mth.clamp(info.value(), 0, maxHp);
+        if (clamped != getStoredHpCenti(player)) {
+            setStoredHpCenti(player, clamped);
+        }
     }
 
     public static int getStoredMaxHpCenti(Player player) {
@@ -110,13 +151,59 @@ public final class HolyShieldHelper {
         return getPlayerData(player).getInt(BLOCKED_CENTI);
     }
 
+    /**
+     * Adds blocked damage to NBT and hss_blk. Base value is the scoreboard if the player has an entry
+     * (so /scoreboard edits stick); otherwise NBT (persistence when no score line yet).
+     */
     public static void addBlockedDamageCenti(Player player, int blockedCenti) {
         if (blockedCenti <= 0) {
             return;
         }
         CompoundTag tag = getPlayerData(player);
-        tag.putInt(BLOCKED_CENTI, tag.getInt(BLOCKED_CENTI) + blockedCenti);
+        int base = tag.getInt(BLOCKED_CENTI);
+        if (player instanceof ServerPlayer serverPlayer && serverPlayer.getServer() != null) {
+            MinecraftServer server = serverPlayer.getServer();
+            ensureObjectives(server);
+            Objective objective = server.getScoreboard().getObjective(OBJECTIVE_BLOCKED);
+            if (objective != null) {
+                ReadOnlyScoreInfo info = server.getScoreboard().getPlayerScoreInfo(serverPlayer, objective);
+                if (info != null) {
+                    base = info.value();
+                }
+            }
+        }
+        int newTotal = base + blockedCenti;
+        tag.putInt(BLOCKED_CENTI, newTotal);
         savePlayerData(player, tag);
+        if (player instanceof ServerPlayer serverPlayer && serverPlayer.getServer() != null) {
+            setBlockedObjectiveScore(serverPlayer, newTotal);
+        }
+    }
+
+    /** Writes hss_blk only when blocked damage changes (not every tick). */
+    private static void setBlockedObjectiveScore(ServerPlayer player, int value) {
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        Objective objective = server.getScoreboard().getObjective(OBJECTIVE_BLOCKED);
+        if (objective == null) {
+            return;
+        }
+        server.getScoreboard().getOrCreatePlayerScore(player, objective).set(value);
+    }
+
+    /** Keeps hss_hp aligned with NBT whenever HP changes (e.g. after combat). Avoids applyScoreboardHpOverride restoring stale scores next tick. */
+    private static void setHpObjectiveScore(ServerPlayer player, int value) {
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        Objective objective = server.getScoreboard().getObjective(OBJECTIVE_HP);
+        if (objective == null) {
+            return;
+        }
+        server.getScoreboard().getOrCreatePlayerScore(player, objective).set(value);
     }
 
     public static int getLastSpellLevel(Player player) {
@@ -135,6 +222,10 @@ public final class HolyShieldHelper {
             setBreakTicks(player, breakTicks - 1);
             return;
         }
+        // Recover 1% max hp every 2 ticks while shield is inactive.
+        if ((player.level().getGameTime() & 1L) != 0L) {
+            return;
+        }
         int maxHp = getStoredMaxHpCenti(player);
         int hp = getStoredHpCenti(player);
         if (maxHp <= 0 || hp >= maxHp) {
@@ -143,11 +234,12 @@ public final class HolyShieldHelper {
         setStoredHpCenti(player, Math.min(maxHp, hp + Math.max(1, maxHp / 100)));
     }
 
+    /** 仅等级变化时拉满；盾碎后 hp=0 仍走 tickRecovery，举盾时不再因 hp<=0 瞬间回满 */
     public static void ensureCapacityForLevel(ServerPlayer player, int spellLevel) {
         int maxHp = getMaxHpCenti(spellLevel);
         int lastLevel = getLastSpellLevel(player);
         setStoredMaxHpCenti(player, maxHp);
-        if (lastLevel != spellLevel || getStoredHpCenti(player) <= 0) {
+        if (lastLevel != spellLevel) {
             setStoredHpCenti(player, maxHp);
         } else {
             setStoredHpCenti(player, Math.min(getStoredHpCenti(player), maxHp));
@@ -261,16 +353,62 @@ public final class HolyShieldHelper {
         setEntityPreviousHp(shieldEntity, shieldEntity.getHealth());
     }
 
+    /** Apply stored hp to active shield entity (used after scoreboard overrides). */
+    public static void applyStoredHpToShieldEntity(ServerPlayer player, ShieldEntity shieldEntity) {
+        int maxHpCenti = Math.max(0, getStoredMaxHpCenti(player));
+        int hpCenti = Mth.clamp(getStoredHpCenti(player), 0, maxHpCenti);
+        float hp = fromCenti(hpCenti);
+        if (Math.abs(shieldEntity.getHealth() - hp) > 0.0001f) {
+            shieldEntity.setHealth(hp);
+        }
+        shieldEntity.getPersistentData().putFloat(MAX_HP, fromCenti(maxHpCenti));
+        setEntityPreviousHp(shieldEntity, shieldEntity.getHealth());
+    }
+
+    /**
+     * Resolves who is actually hitting the shield. Some damage sources incorrectly set
+     * {@link DamageSource#getDirectEntity()} to the shield owner while the real aggressor is {@link DamageSource#getEntity()}.
+     */
+    @Nullable
+    public static Entity pickDamageAttacker(DamageSource source, @Nullable ServerPlayer shieldOwner) {
+        Entity direct = source.getDirectEntity();
+        Entity root = source.getEntity();
+        if (shieldOwner != null && direct != null && direct.is(shieldOwner) && root != null && !root.is(shieldOwner)) {
+            return root;
+        }
+        return direct != null ? direct : root;
+    }
+
     public static boolean shouldIgnoreDamage(AbstractShieldEntity shieldEntity, @Nullable Entity attacker) {
         ServerPlayer owner = getShieldOwner(shieldEntity);
         if (owner == null || attacker == null) {
             return false;
         }
-        Entity alliedSource = attacker;
-        if (attacker instanceof net.minecraft.world.entity.projectile.Projectile projectile && projectile.getOwner() != null) {
-            alliedSource = projectile.getOwner();
+        Entity alliedSource = resolveProjectileShooter(attacker, shieldEntity.level());
+        // Own / allied projectiles: skip. "Self" as a non-projectile is usually a mis-tagged source — still apply damage.
+        if (alliedSource == owner && !(attacker instanceof Projectile)) {
+            return false;
         }
         return alliedSource == owner || alliedSource.isAlliedTo(owner) || owner.isAlliedTo(alliedSource);
+    }
+
+    /** Spell projectiles may not have getOwner() cached yet; fall back to owner UUID on the server. */
+    public static Entity resolveProjectileShooter(Entity attacker, Level level) {
+        if (!(attacker instanceof Projectile projectile)) {
+            return attacker;
+        }
+        Entity shooter = projectile.getOwner();
+        if (shooter != null) {
+            return shooter;
+        }
+        UUID uuid = ((ProjectileOwnerAccessor) projectile).getTrackedOwnerUuid();
+        if (uuid != null && level instanceof ServerLevel serverLevel) {
+            Entity resolved = serverLevel.getEntity(uuid);
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+        return attacker;
     }
 
     public static void afterShieldDamaged(AbstractShieldEntity shieldEntity) {
@@ -287,9 +425,24 @@ public final class HolyShieldHelper {
         setStoredHpCenti(owner, Math.min(getStoredMaxHpCenti(owner), toCenti(currentHp)));
         setEntityPreviousHp(shieldEntity, currentHp);
         if (currentHp <= 0.0f) {
-            setBreakTicks(owner, 100);
+            setBreakTicks(owner, HOLY_SHIELD_BREAK_DISABLED_TICKS);
             setStoredHpCenti(owner, 0);
+            applyVanillaShieldItemCooldown(owner, HOLY_SHIELD_BREAK_DISABLED_TICKS);
             owner.level().playSound(null, owner.getX(), owner.getY(), owner.getZ(), SoundEvents.SHIELD_BREAK, SoundSource.PLAYERS, 1.0f, 1.0f);
+            if (isActivelyUsingShield(owner)) {
+                owner.releaseUsingItem();
+            }
+        }
+    }
+
+    /** 主副手盾牌物品走原版冷却条，与破碎禁用时间一致 */
+    private static void applyVanillaShieldItemCooldown(ServerPlayer owner, int ticks) {
+        ItemCooldowns cooldowns = owner.getCooldowns();
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack stack = owner.getItemInHand(hand);
+            if (isShieldItem(stack)) {
+                cooldowns.addCooldown(stack.getItem(), ticks);
+            }
         }
     }
 
@@ -300,16 +453,33 @@ public final class HolyShieldHelper {
         }
     }
 
-    public static Component getShieldHud(ServerPlayer player) {
-        int maxHp = Math.max(1, getStoredMaxHpCenti(player));
-        int hp = Mth.clamp(getStoredHpCenti(player), 0, maxHp);
+    public static Component buildHudLine(int hpCenti, int maxHpCenti, int breakTicks) {
+        int maxHp = Math.max(1, maxHpCenti);
+        int hp = Mth.clamp(hpCenti, 0, maxHp);
         int filled = Math.round((hp / (float) maxHp) * 20.0f);
         String bar = "■".repeat(Math.max(0, filled)) + "□".repeat(Math.max(0, 20 - filled));
-        return Component.literal(bar + " " + fromCenti(hp) + "/" + fromCenti(maxHp));
+        var line = Component.literal(bar + " " + fromCenti(hp) + "/" + fromCenti(maxHp));
+        if (breakTicks > 0) {
+            float sec = breakTicks / 20.0f;
+            line.append(Component.literal(" "))
+                    .append(Component.translatable("spell.heroic_spirit_spell.holy_shield.subtitle_break",
+                            String.format(Locale.ROOT, "%.1f", sec)));
+        }
+        return line;
     }
 
-    public static void sendHud(ServerPlayer player) {
-        player.connection.send(new ClientboundSetActionBarTextPacket(getShieldHud(player)));
+    public static Component getShieldHud(ServerPlayer player) {
+        return buildHudLine(getStoredHpCenti(player), getStoredMaxHpCenti(player), getBreakTicks(player));
+    }
+
+    /** 自定义客户端 HUD（action bar 上方），不占原版 title/subtitle。 */
+    public static void syncHolyShieldHudToClient(ServerPlayer player, boolean show) {
+        if (show) {
+            PacketDistributor.sendToPlayer(player, new HolyShieldHudPayload(true,
+                    getStoredHpCenti(player), getStoredMaxHpCenti(player), getBreakTicks(player)));
+        } else {
+            PacketDistributor.sendToPlayer(player, new HolyShieldHudPayload(false, 0, 0, 0));
+        }
     }
 
     public static ResourceLocationHolder getShieldTextures(AbstractShieldEntity shieldEntity) {
@@ -353,7 +523,7 @@ public final class HolyShieldHelper {
         String name = player.getScoreboardName();
         runCommand(server, "scoreboard players set " + name + " " + OBJECTIVE_HP + " " + getStoredHpCenti(player));
         runCommand(server, "scoreboard players set " + name + " " + OBJECTIVE_MAX_HP + " " + getStoredMaxHpCenti(player));
-        runCommand(server, "scoreboard players set " + name + " " + OBJECTIVE_BLOCKED + " " + getBlockedDamageCenti(player));
+        // hss_blk: only updated in addBlockedDamageCenti so /scoreboard changes are not overwritten each tick
         runCommand(server, "scoreboard players set " + name + " " + OBJECTIVE_BREAK + " " + getBreakTicks(player));
     }
 
@@ -362,9 +532,18 @@ public final class HolyShieldHelper {
         server.getCommands().performPrefixedCommand(source, command);
     }
 
-    public static boolean isHolyShieldSpellActive(ServerPlayer player) {
-        var magicData = io.redspace.ironsspellbooks.api.magic.MagicData.getPlayerMagicData(player);
-        return magicData.isCasting() && (HeroicSpiritSpell.MODID + ":holy_shield").equals(magicData.getCastingSpellId());
+    /** True while blocking with a shield and Holy Shield is learned + inscribed (spell wheel). */
+    public static boolean isHolyShieldBarrierActive(ServerPlayer player) {
+        if (getBreakTicks(player) > 0) {
+            return false;
+        }
+        if (!hasShieldItem(player)) {
+            return false;
+        }
+        if (!isActivelyUsingShield(player)) {
+            return false;
+        }
+        return HolyShieldRuntime.getInscribedSpellLevel(player) > 0;
     }
 
     public record ResourceLocationHolder(String namespace, String overlayPath, String trimPath) {

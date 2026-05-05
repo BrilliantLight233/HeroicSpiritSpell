@@ -1,8 +1,10 @@
 package com.lin.heroic_spirit_spell.mixin;
 
+import com.lin.heroic_spirit_spell.util.FireShieldHelper;
 import com.lin.heroic_spirit_spell.util.HolyShieldHelper;
 import io.redspace.ironsspellbooks.entity.spells.AbstractShieldEntity;
 import io.redspace.ironsspellbooks.entity.spells.shield.ShieldEntity;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -17,8 +19,13 @@ public abstract class ShieldEntityMixin {
     @Inject(method = "takeDamage", at = @At("HEAD"), cancellable = true)
     private void heroicSpiritSpell$ignoreAlliedDamage(DamageSource source, float amount, @Nullable Vec3 location, CallbackInfo ci) {
         AbstractShieldEntity shieldEntity = (AbstractShieldEntity) (Object) this;
-        Entity attacker = source.getDirectEntity() != null ? source.getDirectEntity() : source.getEntity();
+        ServerPlayer shieldOwner = HolyShieldHelper.getShieldOwner(shieldEntity);
+        Entity attacker = HolyShieldHelper.pickDamageAttacker(source, shieldOwner);
         if (HolyShieldHelper.isHolyShield(shieldEntity) && HolyShieldHelper.shouldIgnoreDamage(shieldEntity, attacker)) {
+            ci.cancel();
+            return;
+        }
+        if (FireShieldHelper.isFireShield(shieldEntity) && FireShieldHelper.shouldIgnoreDamage(shieldEntity, attacker)) {
             ci.cancel();
         }
     }
@@ -28,13 +35,17 @@ public abstract class ShieldEntityMixin {
         AbstractShieldEntity shieldEntity = (AbstractShieldEntity) (Object) this;
         if (HolyShieldHelper.isHolyShield(shieldEntity) && !shieldEntity.level().isClientSide) {
             HolyShieldHelper.afterShieldDamaged(shieldEntity);
+            return;
+        }
+        if (FireShieldHelper.isFireShield(shieldEntity) && !shieldEntity.level().isClientSide) {
+            FireShieldHelper.afterShieldDamaged(shieldEntity);
         }
     }
 
     @Inject(method = "destroy", at = @At("HEAD"), cancellable = true)
     private void heroicSpiritSpell$suppressDefaultBreakSound(CallbackInfo ci) {
         AbstractShieldEntity shieldEntity = (AbstractShieldEntity) (Object) this;
-        if (HolyShieldHelper.isHolyShield(shieldEntity)) {
+        if (HolyShieldHelper.isHolyShield(shieldEntity) || FireShieldHelper.isFireShield(shieldEntity)) {
             shieldEntity.discard();
             ci.cancel();
         }

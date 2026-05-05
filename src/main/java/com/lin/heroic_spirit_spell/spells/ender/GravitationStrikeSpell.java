@@ -1,21 +1,24 @@
 package com.lin.heroic_spirit_spell.spells.ender;
 
+import com.github.L_Ender.cataclysm.entity.effect.Void_Vortex_Entity;
 import com.lin.heroic_spirit_spell.HeroicSpiritSpell;
-import com.lin.heroic_spirit_spell.particle.GravitationStrikeParticleOptions;
+import com.lin.heroic_spirit_spell.registry.ModEffects;
 import com.lin.heroic_spirit_spell.spells.holy.HoldCastSpell;
+import com.lin.heroic_spirit_spell.util.GravitationStrikeChargeTracker;
 import io.redspace.ironsspellbooks.api.config.DefaultConfig;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.registry.SchoolRegistry;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.ICastData;
+import io.redspace.ironsspellbooks.api.spells.ICastDataSerializable;
 import io.redspace.ironsspellbooks.api.spells.SpellAnimations;
 import io.redspace.ironsspellbooks.api.spells.SpellRarity;
 import io.redspace.ironsspellbooks.api.util.AnimationHolder;
 import io.redspace.ironsspellbooks.api.util.Utils;
+import io.redspace.ironsspellbooks.capabilities.magic.ImpulseCastData;
 import io.redspace.ironsspellbooks.capabilities.magic.MagicManager;
-import io.redspace.ironsspellbooks.damage.DamageSources;
-import io.redspace.ironsspellbooks.particle.TraceParticleOptions;
-import io.redspace.ironsspellbooks.registries.MobEffectRegistry;
+import io.redspace.ironsspellbooks.network.casting.OnClientCastPacket;
+import io.redspace.ironsspellbooks.player.SpinAttackType;
 import io.redspace.ironsspellbooks.registries.SoundRegistry;
 import io.redspace.ironsspellbooks.util.ParticleHelper;
 import net.minecraft.network.chat.Component;
@@ -24,25 +27,23 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
-import net.minecraft.world.level.ClipContext;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3f;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class GravitationStrikeSpell extends HoldCastSpell {
     private static final ResourceLocation SPELL_ID =
@@ -50,18 +51,25 @@ public class GravitationStrikeSpell extends HoldCastSpell {
     private static final int MAX_HOLD_DURATION_TICKS = 20 * 60 * 60;
     private static final int MAX_CHARGE_TICKS = 80;
     private static final int CHARGE_EFFECT_DURATION_TICKS = 5;
+    /** 与铁魔法烈焰冲锋一致：冲刺状态持续 15 tick */
+    private static final int DASH_EFFECT_DURATION_TICKS = 15;
     private static final float PULL_RADIUS = 8.0f;
-    private static final float DASH_DISTANCE = 12.0f;
-    private static final float DASH_DAMAGE_RADIUS = 2.5f;
+    private static final float DASH_BASE_POWER = 15.0f;
     private static final float LIVING_PULL_STRENGTH = 0.18f;
     private static final float PROJECTILE_PULL_STRENGTH = 0.24f;
-    private static final float DASH_VERTICAL_LIFT = 0.1f;
-    private static final float DAMAGE_BOX_HEIGHT_OFFSET = 1.0f;
-    private static final double TARGET_INTERPOLATION_FACTOR = 0.5;
-    private static final float KNOCKBACK_MULTIPLIER = 1.2f;
+    private static final double DASH_VECTOR_HORIZONTAL_SCALE = 3.0d;
+    private static final double DASH_VECTOR_VERTICAL_BIAS = 0.25d;
+    private static final double DASH_DELTA_LERP_FACTOR = 0.75d;
+    private static final double GROUND_LAUNCH_HEIGHT = 1.5d;
     private static final double MIN_PULL_DISTANCE = 0.25;
-    private static final Vector3f TRACE_COLOR = new Vector3f(0.72f, 0.28f, 1.0f);
-    private static final Map<UUID, ChargeState> CHARGE_STATES = new HashMap<>();
+    private static final ResourceLocation ENDER_RIPTIDE_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(HeroicSpiritSpell.MODID, "textures/entity/ender_riptide.png");
+    private static final SpinAttackType ENDER_SPIN_ATTACK = new SpinAttackType(ENDER_RIPTIDE_TEXTURE, true);
+
+    /** Cataclysm void_vortex: refresh lifespan to avoid natural expiry explosion */
+    private static final int VOID_VORTEX_REFRESH_TICKS = 600;
+    /** Caster UUID -> vortex entity id (server thread only) */
+    private static final ConcurrentHashMap<UUID, Integer> VORTEX_ENTITY_ID_BY_CASTER = new ConcurrentHashMap<>();
 
     private final DefaultConfig defaultConfig = new DefaultConfig()
             .setMinRarity(SpellRarity.UNCOMMON)
@@ -78,6 +86,38 @@ public class GravitationStrikeSpell extends HoldCastSpell {
         this.manaCostPerLevel = 0;
     }
 
+    /**
+     * 与 {@link #releaseStrike} 一致的水平冲锋方向（单位向量，xz）。
+     */
+    public static Vec3 getDashHorizontalDirection(LivingEntity caster) {
+        Vec3 look = caster.getLookAngle();
+        Vec3 scaled = look.multiply(DASH_VECTOR_HORIZONTAL_SCALE, 1.0, DASH_VECTOR_HORIZONTAL_SCALE).normalize();
+        Vec3 horiz = new Vec3(scaled.x, 0.0, scaled.z);
+        if (horiz.lengthSqr() < 1e-8) {
+            float yawRad = caster.getYRot() * Mth.DEG_TO_RAD;
+            return new Vec3(-Mth.sin(yawRad), 0.0, Mth.cos(yawRad));
+        }
+        return horiz.normalize();
+    }
+
+    /**
+     * 粗略估算本段冲刺的水平位移（格）。dashDamageAmplifier 为冲刺效果的伤害值（与 getDashContactDamage 一致），用于反推法术强度。
+     * 与当前速度取较大值，避免估算偏低。
+     */
+    public static double estimateHorizontalDashTravelBlocks(LivingEntity caster, int dashDamageAmplifier) {
+        float spellPowerApprox = Math.max(0.0f, dashDamageAmplifier - 5.0f);
+        float dashPower = (DASH_BASE_POWER + spellPowerApprox) / 12.0f;
+        Vec3 look = caster.getLookAngle();
+        Vec3 scaled = look.multiply(DASH_VECTOR_HORIZONTAL_SCALE, 1.0, DASH_VECTOR_HORIZONTAL_SCALE).normalize();
+        Vec3 impulse = scaled.add(0.0, DASH_VECTOR_VERTICAL_BIAS, 0.0).scale(dashPower);
+        double hSpeedFromImpulse = Math.hypot(impulse.x, impulse.z);
+        double fromImpulse = hSpeedFromImpulse * DASH_EFFECT_DURATION_TICKS * 0.4;
+        double vx = caster.getDeltaMovement().x;
+        double vz = caster.getDeltaMovement().z;
+        double velBased = Math.hypot(vx, vz) * DASH_EFFECT_DURATION_TICKS * 0.42;
+        return Math.max(fromImpulse, velBased);
+    }
+
     @Override
     public DefaultConfig getDefaultConfig() {
         return defaultConfig;
@@ -91,41 +131,50 @@ public class GravitationStrikeSpell extends HoldCastSpell {
     @Override
     public List<MutableComponent> getUniqueInfo(int spellLevel, LivingEntity caster) {
         return List.of(
-                Component.translatable("ui.irons_spellbooks.damage", Utils.stringTruncation(getBaseDamage(spellLevel, caster), 1)),
+                Component.translatable("ui.irons_spellbooks.damage", getDashContactDamage(spellLevel, caster)),
                 Component.translatable("spell.heroic_spirit_spell.gravitation_strike.charge_time", Utils.stringTruncation(MAX_CHARGE_TICKS / 20f, 1)));
     }
 
-    @Override
-    public Optional<SoundEvent> getCastStartSound() {
-        return Optional.of(SoundRegistry.BLACK_HOLE_CHARGE.get());
-    }
-
+    // 对齐 Cataclysm_Spellbooks GravitationPull：finish=PORTAL_AMBIENT，无 getCastStartSound
     @Override
     public Optional<SoundEvent> getCastFinishSound() {
-        return Optional.of(SoundRegistry.ENDER_CAST.get());
+        return Optional.of(SoundEvents.PORTAL_AMBIENT);
     }
 
+    // 与 dragon_breath 相同：AbstractSpell 对持续施法的默认动作（continuous_thrust）
     @Override
     public AnimationHolder getCastStartAnimation() {
-        return SpellAnimations.ONE_HANDED_VERTICAL_UPSWING_ANIMATION;
+        return SpellAnimations.ANIMATION_CONTINUOUS_CAST;
     }
 
     @Override
     public void onClientCast(Level level, int spellLevel, LivingEntity entity, ICastData castData) {
+        if (castData instanceof ImpulseCastData impulseCastData) {
+            entity.hasImpulse = impulseCastData.hasImpulse;
+            entity.setDeltaMovement(entity.getDeltaMovement().add(impulseCastData.x, impulseCastData.y, impulseCastData.z));
+            entity.setYBodyRot(entity.getYRot());
+            return;
+        }
         super.onClientCast(level, spellLevel, entity, castData);
         entity.setYBodyRot(entity.getYRot());
+    }
+
+    @Override
+    public ICastDataSerializable getEmptyCastData() {
+        return new ImpulseCastData();
+    }
+
+    @Override
+    public void onCast(Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData) {
+        super.onCast(level, spellLevel, entity, castSource, playerMagicData);
     }
 
     @Override
     public void onServerPreCast(Level level, int spellLevel, LivingEntity entity, @Nullable MagicData playerMagicData) {
         super.onServerPreCast(level, spellLevel, entity, playerMagicData);
         if (entity instanceof ServerPlayer serverPlayer) {
-            CHARGE_STATES.put(serverPlayer.getUUID(), new ChargeState(serverPlayer.getHealth()));
+            GravitationStrikeChargeTracker.resetForNewCast(serverPlayer);
         }
-    }
-
-    @Override
-    public void onCast(Level level, int spellLevel, LivingEntity entity, CastSource castSource, MagicData playerMagicData) {
     }
 
     @Override
@@ -134,8 +183,9 @@ public class GravitationStrikeSpell extends HoldCastSpell {
             return;
         }
 
-        ChargeState state = CHARGE_STATES.computeIfAbsent(serverPlayer.getUUID(), key -> new ChargeState(serverPlayer.getHealth()));
-        updateTrackedDamage(serverPlayer, state);
+        if (level instanceof ServerLevel serverLevel) {
+            tickVoidVortex(serverLevel, serverPlayer);
+        }
         applyChargeEffects(serverPlayer);
         pullNearbyTargets(level, serverPlayer);
         spawnChargeParticles(level, serverPlayer, playerMagicData);
@@ -149,90 +199,71 @@ public class GravitationStrikeSpell extends HoldCastSpell {
 
     @Override
     public void onServerCastComplete(Level level, int spellLevel, LivingEntity entity, MagicData playerMagicData, boolean cancelled) {
+        if (entity instanceof ServerPlayer serverPlayer && level instanceof ServerLevel serverLevel) {
+            removeVoidVortex(serverLevel, serverPlayer);
+        }
         if (entity instanceof ServerPlayer serverPlayer) {
-            ChargeState state = CHARGE_STATES.remove(serverPlayer.getUUID());
-            if (state != null) {
-                updateTrackedDamage(serverPlayer, state);
-            }
-            if (cancelled) {
-                releaseStrike(level, spellLevel, serverPlayer, state);
-            }
+            // 自然结束持续施法时 MagicManager 传 cancelled=false；CancelCastPacket 满蓄/手动取消为 true。
+            // 仅判断 cancelled 会导致自然结束永远不冲锋。
+            releaseStrike(spellLevel, serverPlayer, playerMagicData);
         }
         super.onServerCastComplete(level, spellLevel, entity, playerMagicData, cancelled);
     }
 
-    private void releaseStrike(Level level, int spellLevel, ServerPlayer caster, @Nullable ChargeState state) {
-        float absorbedDamage = state != null ? state.accumulatedDamage : 0.0f;
-        Vec3 forward = caster.getForward();
-        Vec3 eyePosition = caster.getEyePosition();
-        Vec3 end = Utils.raycastForBlock(
-                level,
-                eyePosition,
-                eyePosition.add(forward.scale(DASH_DISTANCE)),
-                ClipContext.Fluid.NONE).getLocation();
+    private void releaseStrike(int spellLevel, ServerPlayer caster, MagicData playerMagicData) {
+        CastSource castSource = playerMagicData.getCastSource();
 
-        AABB targetSearchArea = caster.getHitbox().expandTowards(end.subtract(eyePosition)).inflate(2.0);
-        var targetableEntities = level.getEntities(caster, targetSearchArea, target ->
-                target instanceof LivingEntity livingEntity
-                        && isEnemyTarget(caster, livingEntity)
-                        && target.getBoundingBox().getCenter()
-                        .subtract(caster.getBoundingBox().getCenter())
-                        .normalize()
-                        .dot(caster.getForward()) >= .75);
-        targetableEntities.sort(Comparator.comparingDouble(target -> target.distanceToSqr(caster)));
+        caster.hasImpulse = true;
+        float dashPower = (DASH_BASE_POWER + getSpellPower(spellLevel, caster)) / 12.0f;
+        Vec3 impulse = caster.getLookAngle()
+                .multiply(DASH_VECTOR_HORIZONTAL_SCALE, 1.0d, DASH_VECTOR_HORIZONTAL_SCALE)
+                .normalize()
+                .add(0.0d, DASH_VECTOR_VERTICAL_BIAS, 0.0d)
+                .scale(dashPower);
 
-        boolean struckTarget = false;
-        if (!targetableEntities.isEmpty() && targetableEntities.get(0).distanceToSqr(caster) < DASH_DISTANCE * DASH_DISTANCE) {
-            Entity closestEntity = targetableEntities.get(0);
-            AABB damageBox = AABB.ofSize(
-                    closestEntity.getBoundingBox().getCenter(),
-                    DASH_DAMAGE_RADIUS,
-                    DASH_DAMAGE_RADIUS + DAMAGE_BOX_HEIGHT_OFFSET,
-                    DASH_DAMAGE_RADIUS).move(forward.scale(DASH_DAMAGE_RADIUS / 2.0f));
-            end = damageBox.getCenter().add(end).scale(TARGET_INTERPOLATION_FACTOR);
-            var damageSource = getDamageSource(caster);
-            for (LivingEntity target : level.getEntitiesOfClass(LivingEntity.class, damageBox, livingEntity ->
-                    isEnemyTarget(caster, livingEntity)
-                            && Utils.hasLineOfSight(level, caster.getEyePosition(), livingEntity.getBoundingBox().getCenter(), true))) {
-                if (DamageSources.applyDamage(target, getBaseDamage(spellLevel, caster) + absorbedDamage, damageSource)) {
-                    struckTarget = true;
-                    MagicManager.spawnParticles(level, ParticleHelper.ENDER_SPARKS,
-                            target.getX(),
-                            target.getY() + target.getBbHeight() * 0.5f,
-                            target.getZ(),
-                            15,
-                            target.getBbWidth() * 0.5f,
-                            target.getBbHeight() * 0.5f,
-                            target.getBbWidth() * 0.5f,
-                            0.25,
-                            false);
-                    if (level instanceof ServerLevel serverLevel) {
-                        EnchantmentHelper.doPostAttackEffects(serverLevel, target, damageSource);
-                    }
-                    Vec3 knockback = forward.scale(KNOCKBACK_MULTIPLIER
-                                    * Utils.clampedKnockbackResistanceFactor(target, 0.2f, 1f))
-                            .add(0, 0.2, 0);
-                    target.setDeltaMovement(knockback);
-                    target.hurtMarked = true;
-                }
-            }
-            if (struckTarget) {
-                level.playSound(null, closestEntity.getX(), closestEntity.getY(), closestEntity.getZ(),
-                        SoundRegistry.FIRE_DAGGER_PARRY.get(), caster.getSoundSource());
-            }
+        if (caster.onGround()) {
+            caster.setPos(caster.position().add(0.0d, GROUND_LAUNCH_HEIGHT, 0.0d));
         }
 
-        Vec3 rayVector = end.subtract(eyePosition);
-        Vec3 impulse = rayVector.scale(1 / 6f).add(0, DASH_VERTICAL_LIFT, 0);
-        caster.setDeltaMovement(caster.getDeltaMovement().scale(0.2).add(impulse));
+        ImpulseCastData impulseData = new ImpulseCastData(
+                (float) impulse.x,
+                (float) impulse.y,
+                (float) impulse.z,
+                true
+        );
+
+        caster.setDeltaMovement(new Vec3(
+                Mth.lerp(DASH_DELTA_LERP_FACTOR, caster.getDeltaMovement().x, impulse.x),
+                Mth.lerp(DASH_DELTA_LERP_FACTOR, caster.getDeltaMovement().y, impulse.y),
+                Mth.lerp(DASH_DELTA_LERP_FACTOR, caster.getDeltaMovement().z, impulse.z)
+        ));
         caster.hurtMarked = true;
-        caster.addEffect(new MobEffectInstance(MobEffectRegistry.FALL_DAMAGE_IMMUNITY, 20, 0, false, false, true));
-        spawnReleaseParticles(level, caster, end, impulse);
+        GravitationStrikeChargeTracker.transferChargeToDashRetribution(caster);
+        caster.addEffect(new MobEffectInstance(
+                ModEffects.GRAVITATION_STRIKE_DASH,
+                DASH_EFFECT_DURATION_TICKS,
+                getDashContactDamage(spellLevel, caster),
+                false,
+                false,
+                false
+        ));
+        caster.invulnerableTime = 20;
+        playerMagicData.getSyncedData().setSpinAttackType(ENDER_SPIN_ATTACK);
+
+        caster.level().playSound(
+                null,
+                caster.getX(),
+                caster.getY(),
+                caster.getZ(),
+                SoundRegistry.BLACK_HOLE_CAST.get(),
+                caster.getSoundSource());
+
+        PacketDistributor.sendToPlayer(caster, new OnClientCastPacket(getSpellId(), spellLevel, castSource, impulseData));
     }
 
     private void applyChargeEffects(ServerPlayer player) {
         player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, CHARGE_EFFECT_DURATION_TICKS, 3, false, false, true));
-        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, CHARGE_EFFECT_DURATION_TICKS, 3, false, false, true));
+        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, CHARGE_EFFECT_DURATION_TICKS, 2, false, false, true));
     }
 
     private void pullNearbyTargets(Level level, ServerPlayer caster) {
@@ -262,48 +293,6 @@ public class GravitationStrikeSpell extends HoldCastSpell {
         }
     }
 
-    private void spawnReleaseParticles(Level level, LivingEntity caster, Vec3 end, Vec3 impulse) {
-        Vec3 forward = impulse.normalize();
-        Vec3 up = new Vec3(0, 1, 0);
-        if (forward.dot(up) > .999) {
-            up = new Vec3(1, 0, 0);
-        }
-        Vec3 right = up.cross(forward);
-        Vec3 particlePos = end.subtract(forward.scale(3)).add(right.scale(-0.3));
-        MagicManager.spawnParticles(level,
-                new GravitationStrikeParticleOptions(
-                        (float) forward.x,
-                        (float) forward.y,
-                        (float) forward.z,
-                        (float) right.x,
-                        (float) right.y,
-                        (float) right.z,
-                        1f),
-                particlePos.x, particlePos.y + 0.3, particlePos.z, 1, 0, 0, 0, 0, true);
-
-        Vec3 rayVector = end.subtract(caster.getEyePosition());
-        double speed = rayVector.length() / DASH_DISTANCE * 0.75;
-        for (int i = 0; i < 15; i++) {
-            Vec3 particleStart = caster.getBoundingBox().getCenter().add(Utils.getRandomVec3(1 + caster.getBbWidth()));
-            Vec3 particleEnd = particleStart.add(rayVector);
-            MagicManager.spawnParticles(level,
-                    new TraceParticleOptions(Utils.v3f(particleEnd), TRACE_COLOR),
-                    particleStart.x, particleStart.y, particleStart.z, 1, 0, 0, 0, speed, false);
-        }
-    }
-
-    private void updateTrackedDamage(ServerPlayer player, ChargeState state) {
-        float health = player.getHealth();
-        if (health < state.lastHealth) {
-            state.accumulatedDamage += state.lastHealth - health;
-        }
-        state.lastHealth = health;
-    }
-
-    private boolean isEnemyTarget(LivingEntity caster, LivingEntity target) {
-        return target.isAlive() && target != caster && !target.isAlliedTo(caster);
-    }
-
     private boolean isPullTarget(LivingEntity caster, Entity target) {
         if (target == caster || !target.isAlive() || target.isSpectator()) {
             return false;
@@ -318,8 +307,8 @@ public class GravitationStrikeSpell extends HoldCastSpell {
         return false;
     }
 
-    private float getBaseDamage(int spellLevel, LivingEntity caster) {
-        return getSpellPower(spellLevel, caster);
+    private int getDashContactDamage(int spellLevel, LivingEntity caster) {
+        return (int) (5.0f + getSpellPower(spellLevel, caster));
     }
 
     private int getChargedTicks(MagicData playerMagicData) {
@@ -327,12 +316,43 @@ public class GravitationStrikeSpell extends HoldCastSpell {
                 Math.max(0, playerMagicData.getCastDuration() - playerMagicData.getCastDurationRemaining()));
     }
 
-    private static final class ChargeState {
-        private float accumulatedDamage;
-        private float lastHealth;
+    private static void tickVoidVortex(ServerLevel level, ServerPlayer caster) {
+        UUID casterId = caster.getUUID();
+        Integer netId = VORTEX_ENTITY_ID_BY_CASTER.get(casterId);
+        if (netId != null) {
+            Entity existing = level.getEntity(netId);
+            if (existing instanceof Void_Vortex_Entity vortex && vortex.isAlive()) {
+                vortex.setPos(caster.getX(), caster.getY(), caster.getZ());
+                vortex.setYRot(caster.getYRot());
+                vortex.setLifespan(VOID_VORTEX_REFRESH_TICKS);
+                return;
+            }
+            VORTEX_ENTITY_ID_BY_CASTER.remove(casterId);
+        }
 
-        private ChargeState(float lastHealth) {
-            this.lastHealth = lastHealth;
+        float yawRad = caster.getYRot() * ((float) Math.PI / 180F);
+        Void_Vortex_Entity vortex = new Void_Vortex_Entity(
+                level,
+                caster.getX(),
+                caster.getY(),
+                caster.getZ(),
+                yawRad,
+                caster,
+                VOID_VORTEX_REFRESH_TICKS
+        );
+        level.addFreshEntity(vortex);
+        VORTEX_ENTITY_ID_BY_CASTER.put(casterId, vortex.getId());
+    }
+
+    private static void removeVoidVortex(ServerLevel level, ServerPlayer caster) {
+        Integer netId = VORTEX_ENTITY_ID_BY_CASTER.remove(caster.getUUID());
+        if (netId == null) {
+            return;
+        }
+        Entity e = level.getEntity(netId);
+        if (e != null) {
+            e.discard();
         }
     }
+
 }
