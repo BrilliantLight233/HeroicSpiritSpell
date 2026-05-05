@@ -17,7 +17,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 @EventBusSubscriber(modid = HeroicSpiritSpell.MODID)
 public final class RightClickCastProbeEvents {
 
-    private static final boolean ENABLED = false;
+    private static final boolean ENABLED = true;
 
     private RightClickCastProbeEvents() {
     }
