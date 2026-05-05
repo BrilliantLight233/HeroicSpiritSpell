@@ -152,6 +152,12 @@ dependencies {
     // GeckoLib
     implementation "software.bernie.geckolib:geckolib-neoforge-${minecraft_version}:${geckolib_version}"
 
+    // Lionfish API — Cataclysm 依赖（client model 等），开发环境与整合包均需安装
+    implementation "curse.maven:lionfish-api-1001614:${lionfish_api_cf_file}"
+
+    // L_Ender's Cataclysm（前置：虚空漩涡 void_vortex 实体与渲染）
+    implementation "curse.maven:lendercataclysm-551586:${cataclysm_cf_file}"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
